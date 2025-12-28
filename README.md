@@ -60,16 +60,24 @@ The RNA-seq data for this project were obtained from NCBI SRA. Each sample in GE
 
 `prefetch SRR7179504`  This downloads the .sra file for one sequencing run. Repeated this for all SRR accessions listed in the dataset.
 
-`ls 1_Raw_reads/
+
+```
+ls 1_Raw_reads/
   SRR7179504  SRR7179506  SRR7179508  SRR7179510  SRR7179520  SRR7179522  SRR7179524  SRR7179526  SRR7179536  SRR7179540
   SRR7179505  SRR7179507  SRR7179509  SRR7179511  SRR7179521  SRR7179523  SRR7179525  SRR7179527  SRR7179537  SRR7179541`
-
+```
 
 
 2. Convert SRA files to FASTQ format
 
 SRA files are converted into compressed FASTQ files (.fastq.gz) using `fastq-dump.` Each SRR produces a FASTQ file containing sequencing reads.
 
-`fastq-dump --outdir fastq --gzip --skip-technical --readids --read-filter pass --dumpbase --split-3 --clip SRR7179504/SRR7179504.sra`
-
+```
+fastq-dump --outdir fastq --gzip --skip-technical --readids \
+--read-filter pass --dumpbase --split-3 --clip SRR7179504/SRR7179504.sra`
+```
 Instead of running these commands repeatedly, the conversion was automated using a Python script `fastq_download.py` that loops over all SRR IDs.
+
+`python3 ./Scripts/ fastq_download.py`
+
+
