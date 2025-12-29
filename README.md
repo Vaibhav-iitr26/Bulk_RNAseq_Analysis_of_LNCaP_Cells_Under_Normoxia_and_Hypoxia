@@ -1,7 +1,6 @@
 # RNA-Seq_Analysis
 
-**INTRODUCTION**
-
+<ins>**INTRODUCTION**</ins>
 RNA sequencing is a widely used method to study gene expression by measuring RNA levels in cells. It allows us to compare how genes are turned on or off under different biological conditions. RNA-seq is commonly used in cancer research to understand how cells respond to stress, treatment, or changes in their environment.
 
 Prostate cancer usually begins as an androgen-dependent disease, meaning that cancer cells rely on androgen receptor (AR) signaling for growth. Over time, especially under stress or therapy, prostate cancer cells can adapt and become more aggressive and androgen-independent. One such aggressive form is neuroendocrine prostate cancer (NEPC), which is associated with poor prognosis and limited treatment options.
@@ -11,7 +10,7 @@ The research study “ONECUT2 is a driver of neuroendocrine prostate cancer” i
 The main aim of this project is to learn and understand the complete RNA-seq analysis workflow, with a particular focus on differential gene expression analysis. For this purpose, RNA-seq data from the LNCaP prostate cancer cell line were used as the primary model system. RNA-seq data from the PC3 cell line were also used during the initial exploratory steps, such as quality control and principal component analysis (PCA), to gain experience in handling multi-sample datasets and to understand overall variation across samples. However, differential gene expression analysis was performed only on LNCaP samples, as using a single cell line is sufficient to learn the RNA-seq workflow and allows a straightforward comparison between normoxia and hypoxia conditions.
 ___
 
-**DATASET DESCRIPTION**
+<ins>**DATASET DESCRIPTION**</ins>
 
 The RNA-seq data used in this project were obtained from the Gene Expression Omnibus (GEO) under the accession GSE106305. This dataset was generated as part of the study “ONECUT2 is a driver of neuroendocrine prostate cancer” and includes RNA-seq experiments performed on human prostate cancer cell lines under different oxygen conditions.
 
@@ -52,9 +51,9 @@ Cells were cultured under:
 4. All sequencing data are single-end RNA-seq reads.
 ___
 
-**RNA-SEQ WOEKFLOW**
+<ins>**RNA-SEQ WOEKFLOW**</ins>
 
-1. Download raw sequencing data from SRA
+1. Downloaded raw sequencing data from SRA
 
 The RNA-seq data for this project were obtained from NCBI SRA. Each sample in GEO is linked to one or more SRR accessions, which store raw sequencing data in .sra format. These .sra files are not directly usable for analysis and must first be downloaded and converted into FASTQ format. 
 
@@ -68,14 +67,44 @@ ls 1_Raw_reads/
 ```
 
 
-2. Convert SRA files to FASTQ format
+2. Converted SRA files to FASTQ format
 
 SRA files are converted into compressed FASTQ files (.fastq.gz) using `fastq-dump.` Each SRR produces a FASTQ file containing sequencing reads.
 
 ```
+
 fastq-dump --outdir fastq --gzip --skip-technical --readids \
 --read-filter pass --dumpbase --split-3 --clip SRR7179504/SRR7179504.sra`
 ```
 Instead of running these commands repeatedly, the conversion was automated using a Python script `fastq_download.py` that loops over all SRR IDs.
 
 <img width="1919" height="258" alt="Screenshot 2025-12-13 150858" src="https://github.com/user-attachments/assets/a1f3ad65-60d0-4291-8027-5746b9a1441d" />
+
+
+
+3. Merged technical replicates into sample-wise FASTQ files
+
+Multiple SRR FASTQ files corresponding to one biological replicate are concatenated into a single FASTQ file.
+
+```
+cat SRR7179504_pass.fastq.gz SRR7179505_pass.fastq.gz SRR7179506_pass.fastq.gz SRR7179507_pass.fastq.gz  > LNCAP_Normoxia_S1.fastq.gz
+cat SRR7179508_pass.fastq.gz SRR7179509_pass.fastq.gz SRR7179510_pass.fastq.gz SRR7179511_pass.fastq.gz  > LNCAP_Normoxia_S2.fastq.gz
+cat SRR7179520_pass.fastq.gz SRR7179521_pass.fastq.gz SRR7179522_pass.fastq.gz SRR7179523_pass.fastq.gz  > LNCAP_Hypoxia_S1.fastq.gz
+cat SRR7179524_pass.fastq.gz SRR7179525_pass.fastq.gz SRR7179526_pass.fastq.gz SRR7179527_pass.fastq.gz  > LNCAP_Hypoxia_S2.fastq.gz
+
+mv SRR7179536_pass.fastq.gz PC3_Normoxia_S1.fastq.gz
+mv SRR7179537_pass.fastq.gz PC3_Normoxia_S2.fastq.gz
+mv SRR7179540_pass.fastq.gz PC3_Hypoxia_S1.fastq.gz
+mv SRR7179541_pass.fastq.gz PC3_Hypoxia_S2.fastq.gz
+
+```
+
+4. Initial quality check (FastQC)
+
+FastQC is run on the sample-wise FASTQ files to assess sequencing quality. FastQC checks various parameters like base quality scores, GC content, adapter contamination, overrepresented sequences. 
+
+Command
+```
+fastqc 3_Fastq_samplewise/*.fastq.gz \
+-o 4_Fastqc_results/ --threads 8
+```
