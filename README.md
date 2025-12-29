@@ -170,5 +170,24 @@ qualimap rnaseq -bam alignedreads/LNCAP_Hypoxia_S1.bam \
   -outdir rnaseq_qc_results --java-mem-size=8G
 ```
 
-For each sample, Qualimap generates a qualimapReport.html, an interactive QC report. I have attached one file, named `LNCAP_Hypoxia_S1.fastq.gz FastQC Report.pdf`, you can see there the QC result of that sample.
+For each sample, Qualimap generates a qualimapReport.html, an interactive QC report. I have attached one file, named `Qualimap report_ LNCAP_Hypoxia_S1_RNA Seq QC.pdf`, you can see there the qualimap report.
 
+To apply the same quality checks to all samples, Qualimap was run using a shell script. Script used: `run_qualimap.sh`.
+
+
+### 8. Gene-level Read Quantification Using featureCounts
+
+After alignment and alignment quality checking, each RNA-seq read has a known position in the genome.
+In this step, aligned reads are assigned to genes and counted. The output of this step is a gene × sample count matrix, which is the direct input for differential expression analysis. featureCounts is a fast and widely used read-counting tool. 
+
+For a single sample:
+```
+featureCounts \
+  -a Homo_sapiens.GRCh38.114.gtf \
+  -o LNCAP_Hypoxia_S1_featurecounts.txt \
+  LNCAP_Hypoxia_S1.bam
+
+```
+For each sample, featureCounts generates a gene count file. Because featureCounts must be run on multiple BAM files, read counting was automated using a shell script named `featurecounts.sh`.
+
+After running featureCounts, you obtain one count file per sample. Each file contains gene IDs and the number of reads mapped to that gene for that specific sample. So, all individual count files are need to be merged into a single count matrix, where, Rows are genes, Columns are samples, Values are actual raw read counts. To obtain this matrix, python script `countsmatrix_wholedata.py` used. The final output is a combined count matrix stored in file `GSE106305_counts_matrix.csv`. This combined matrix is the direct input for differential expression analysis.
