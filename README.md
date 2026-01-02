@@ -290,38 +290,253 @@ table(zero_counts_per_gene)
 ```
 
 
-#### 4. 
+### 10. Pathway Analysis
+
+RNA-seq differential expression produces lists of genes. However, biology does not operate gene-by-gene.
+Instead, it operates through pathways, signaling cascades, coordinated gene programs.
+Pathway analysis helps to answer, Which biological processes or programs are altered between conditions?
+
+There are different methods utilised to answer this question. Here we are analysing, using three different approaches. 
+All three methods aim to answer the same high-level question:
+Which biological pathways are affected between conditions?
+But they do so using different assumptions and levels of information.
+
+| Method	| Core idea |	Information used |
+| ---------	| -------- |	---------- |
+| GSEA	| Distribution of genes |	All genes (ranked) |
+| ORA	| Counting genes	| Only significant genes |
+| fgsea + Hallmark |	Fast, robust GSEA	| All genes, curated sets |
+
+
+#### PART 1: Pre-ranked GSEA (Reactome)
+
+##### Step 1: Load required libraries
 
 ```r
-annotation <- fread("Data/GRCh38annotation.csv")
+library(clusterProfiler)
+library(ReactomePA)
+library(org.Hs.eg.db)
+library(dplyr)
+```
 
-annotation$Geneid <- sub("\\..*$", "", annotation$Geneid)
 
-counts_df <- raw_counts %>%
-rownames_to_column("Geneid") %>%
-mutate(Geneid = sub("\\..*$", "", Geneid))
 
-annotated_counts <- left_join(counts_df, annotation, by = "Geneid") %>%
-    dplyr::select(Geneid, Genesymbol, Genebiotype, 
-           LNCAP_Hypoxia_S1, LNCAP_Hypoxia_S2, LNCAP_Normoxia_S1, LNCAP_Normoxia_S2, 
-           PC3_Hypoxia_S1, PC3_Hypoxia_S2, PC3_Normoxia_S1, PC3_Normoxia_S2)
+##### Step 2: Convert gene IDs (ENSEMBL → ENTREZ)
 
-biotypes_to_keep <- c(
-"protein_coding",
-"IG_J_gene","IG_V_gene","IG_C_gene","IG_D_gene",
-"TR_D_gene","TR_C_gene","TR_V_gene","TR_J_gene"
+**Why:** Reactome pathways are indexed by ENTREZ IDs
+
+```r
+res_lncap$ENSEMBL <- rownames(res_lncap)
+
+id_map <- bitr(
+  res_lncap$ENSEMBL,
+  fromType = "ENSEMBL",
+  toType   = "ENTREZID",
+  OrgDb    = org.Hs.eg.db
+)
+```
+
+
+##### Step 3: Merge mapping and remove duplicates
+
+Each gene must contribute once; duplicates distort enrichment.
+
+```r
+res_mapped <- res_lncap %>%
+  left_join(id_map, by = "ENSEMBL") %>%
+  filter(!is.na(ENTREZID)) %>%
+  distinct(ENTREZID, .keep_all = TRUE)
+```
+
+---
+
+##### Step 4: Create ranked gene list 
+
+Ranking metric: `log2FoldChange`
+
+```r
+gene_ranking <- res_mapped$log2FoldChange
+names(gene_ranking) <- res_mapped$ENTREZID
+
+gene_ranking <- sort(gene_ranking, decreasing = TRUE)
+```
+
+*  Top genes are genes induced by condition
+* Bottom genes are genes repressed by condition
+
+---
+
+##### Step 5: Run Reactome GSEA
+
+```r
+gsea_reactome <- gsePathway(
+  geneList     = gene_ranking,
+  organism     = "human",
+  pvalueCutoff = 0.05,
+  verbose      = FALSE
+)
+```
+
+---
+
+## Step 6: Inspect enriched pathways
+
+```r
+head(gsea_reactome@result)
+```
+
+**Key interpretation rules:**
+
+* NES > 0 → pathway activated
+* NES < 0 → pathway suppressed
+
+---
+
+#### PART 2: Over-Representation Analysis (ORA)
+
+* This particular analysis talks about, Are significant DEGs over-represented in known pathways?
+
+
+##### Step 1: Define significant genes
+
+
+```r
+sig_genes <- res_mapped %>%
+  filter(padj < 0.05 & abs(log2FoldChange) > 1) %>%
+  pull(ENTREZID)
+```
+
+
+
+##### Step 2: Run ORA using Reactome
+
+```r
+ora_reactome <- enrichPathway(
+  gene         = sig_genes,
+  organism     = "human",
+  pvalueCutoff = 0.05
+)
+```
+
+
+##### Step 3: Visualize ORA results
+
+```r
+dotplot(ora_reactome, showCategory = 20)
+```
+
+ORA ignores genes just below the cutoff, depends heavily on arbitrary thresholds, misses subtle
+coordinated shifts. Therefore, ORA should be treated as a supporting or confirmatory analysis, not the primary one.
+
+---
+#### PART 3: fgsea + Hallmark 
+
+fgsea is a fast and efficient implementation of the GSEA algorithm. It asks the same question as GSEA but
+scales better and is widely used. 
+Hallmark pathways: - summarize core biological programs - are manually curated - reduce redundancy 
+Hallmark pathways reduce redundancy and highlight dominant biology.
+
+
+
+## Step 10: Load fgsea and Hallmark gene sets
+
+````r
+library(fgsea)
+
+hallmark_sets <- gmtPathways("h.all.v7.0.symbols.gmt.txt")n```
+
+---
+
+## Step 11: Prepare ranked list (gene symbols required)
+
+```r
+# Convert ENSEMBL to SYMBOL
+symbol_map <- bitr(
+  res_lncap$ENSEMBL,
+  fromType = "ENSEMBL",
+  toType   = "SYMBOL",
+  OrgDb    = org.Hs.eg.db
 )
 
-filtered_counts <- annotated_counts %>%
-filter(Genebiotype %in% biotypes_to_keep)
+res_symbol <- res_lncap %>%
+  left_join(symbol_map, by = c("ENSEMBL" = "ENSEMBL")) %>%
+  filter(!is.na(SYMBOL)) %>%
+  distinct(SYMBOL, .keep_all = TRUE)
 
-zero_counts <- rowSums(filtered_counts[, 4:11] == 0)
-filtered_counts <- filtered_counts[zero_counts < 7, ]
+ranked_symbols <- res_symbol$log2FoldChange
+names(ranked_symbols) <- res_symbol$SYMBOL
 
-fwrite(filtered_counts, "filtered_biotype_nozero_count_matrix.csv")
+ranked_symbols <- sort(ranked_symbols, decreasing = TRUE)
+````
 
+
+## Step 12: Run fgsea
+
+```r
+fgsea_res <- fgsea(
+  pathways = hallmark_sets,
+  stats    = ranked_symbols,
+  minSize  = 15,
+  maxSize  = 500,
+  nperm    = 1000
+)
 ```
-[RNA-seq Differential Expression.pdf](https://github.com/user-attachments/files/24397034/RNA-seq.Differential.Expression.pdf)
+
+
+
+## Step 13: Inspect top Hallmark pathways
+
+```r
+fgsea_res %>%
+  arrange(padj) %>%
+  select(pathway, NES, padj) %>%
+  head()
+```
+
+
+
+## Step 14: Visualize Hallmark enrichment
+
+```r
+library(ggplot2)
+library(stringr)
+
+fgsea_res %>%
+  arrange(padj) %>%
+  slice(1:15) %>%
+  mutate(pathway = str_remove(pathway, "HALLMARK_")) %>%
+  ggplot(aes(x = NES, y = reorder(pathway, NES), fill = padj < 0.05)) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Hallmark pathways altered",
+    x = "Normalized Enrichment Score",
+    y = NULL
+  )
+```
+
+
+
+## Final interpretation strategy
+
+* **Primary biology:** fgsea + Hallmark
+* **Mechanistic insight:** Reactome GSEA
+* **Cutoff-based confirmation:** ORA
+
+Consistency across methods strengthens biological confidence.
+
+
+
+## Final takeaway
+
+> GSEA preserves information.
+> ORA discards information first.
+> fgsea + Hallmark summarizes biology cleanly.
+
+Use them as **layers**, not competitors.
+
+
 
 
 
