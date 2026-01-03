@@ -716,7 +716,7 @@ ggsave(
 ```
 
 <p align="center">
-    <img src="Plots/Hallmark_fgsea_waterfall_LNCaP.png">
+    <img src="Plots/Hallmark_Waterfall_LNCAP_Hypoxia.png">
 </p>
 
   The Hallmark fgsea waterfall plot shows strong positive enrichment of hypoxia-related pathways in LNCaP cells, including HYPOXIA, GLYCOLYSIS, ANGIOGENESIS, and EPITHELIAL–MESENCHYMAL TRANSITION, indicating activation of stress adaptation and metabolic reprogramming under low oxygen. In contrast, pathways such as INTERFERON_ALPHA_RESPONSE, INTERFERON_GAMMA_RESPONSE, and OXIDATIVE_PHOSPHORYLATION are negatively enriched, suggesting suppression of immune signaling and mitochondrial respiration.
