@@ -303,6 +303,7 @@ write.csv(norm_counts, "Normalized_counts.csv")
 
 
 #### 6. Exploratory analysis: PCA
+PCA answers "what dominates variation?"
 ```{r}
 
 #Variance-stabilizing transformation
@@ -325,10 +326,13 @@ ggsave("PCA_plot.png", p_pca, width = 6, height = 5, dpi = 300)
 print(p_pca)
 dev.off()
 ```
-PCA answers "what dominates variation?"
 <p align="center">
   <img src="Plots/PCA_plot.png" width="500">
 </p>
+
+PCA of VST-transformed counts shows clear separation of samples by cell line along PC1 (98% variance), indicating that intrinsic transcriptional differences between LNCaP and PC3 dominate the dataset.
+Within each cell line, normoxia and hypoxia samples separate along PC2, suggesting a consistent but comparatively smaller transcriptional response to hypoxic conditions.
+Replicates cluster tightly, indicating good data quality and reproducibility.
 
 
 #### 7. Sample-to-sample distance heatmap
@@ -347,10 +351,12 @@ main = "Sample-to-sample distances")
 print(p)
 dev.off()
 ```
-Dark blue = similar transcriptomes
+<p align="center">
+  <img src="Plots/sample_distance_heatmap.png" width="500">
+</p>
 
-Light color = dissimilar transcriptomes
-# plot
+The sample-to-sample distance heatmap shows clear clustering by cell line, with LNCaP and PC3 samples forming distinct groups, indicating strong cell line–specific transcriptional differences.
+Within each cell line, hypoxia and normoxia samples cluster closely with their respective replicates, demonstrating good reproducibility and a consistent hypoxia-induced transcriptional response.
 
 #### 8. Expression distribution diagnostics
 ```{r}
@@ -365,21 +371,13 @@ plot(density(assay(vsd)[,1]), main = "VST counts", xlab = "Expression")
 dev.off()
 
 ```
-Raw counts:
+<p align="center">
+  <img src="Plots/density_raw_vs_vst.png" width="500">
+</p>
 
-heavy right tail
-
-dominated by few highly expressed genes
-
-VST counts:
-
-approximately normal
-
-comparable across samples
-
-This confirms transformation behaved correctly.
-# plot
-
+Density plots show that raw RNA-seq counts are highly skewed, with most genes having low counts and a long tail of highly expressed genes.
+After variance stabilizing transformation (VST), the expression distributions become more symmetric and comparable across samples, reducing the dominance of highly expressed genes.
+This confirms that VST is appropriate for downstream exploratory analyses such as PCA and clustering.
 
 #### 9. Highly variable gene heatmap
 ```{r}
@@ -398,29 +396,20 @@ fontsize_row = 6,
 main = "Top 40 most variable genes")
 dev.off()
 ```
-These genes:
+<p align="center">
+  <img src="Plots/top_variable_genes_heatmap.png" width="500">
+</p>
+The heatmap of the top 40 most variable genes shows clear separation of samples by cell line, with LNCaP and PC3 forming distinct clusters, indicating strong cell line–specific transcriptional programs.
+Within each cell line, hypoxia and normoxia samples display consistent expression patterns across replicates, suggesting that the largest sources of variation are driven by cell identity, with hypoxia contributing a secondary but structured effect.
 
-drive major differences between samples
 
-often include stress-response, cell-cycle, or condition-specific genes
-
-This heatmap helps confirm:
-
-consistency of biological signal
-
-absence of sample-level artifacts
-# plot
-
+#### 10. Extracted differential expression results
 ```{r}
 dds_lncap <- dds[, grepl("LNCAP", colnames(dds))]
 dds_lncap$condition <- droplevels(dds_lncap$condition)
 dds_lncap$condition <- relevel(dds_lncap$condition, ref = "LNCAP_Normoxia")
 
-```
 
-
-#### 10. Extracted differential expression results
-```{r}
 dds_lncap <- DESeq(dds_lncap)
 
 
@@ -440,7 +429,13 @@ png("MA_plot_LNCAP.png", width = 800, height = 600, res = 150)
 plotMA(res_lncap, ylim = c(-5, 5))
 dev.off()
 ```
-# plot
+<p align="center">
+  <img src="Plots/MA_plot_LNCAP.png" width="500">
+</p>
+
+The MA plot shows the relationship between mean normalized expression and log2 fold change for LNCaP hypoxia versus normoxia, with most genes centered around zero, indicating no global expression bias.
+Differentially expressed genes are primarily observed at moderate to high expression levels, while low-count genes show greater variability, reflecting expected RNA-seq noise.
+This pattern indicates appropriate normalization and reliable detection of hypoxia-responsive genes.
 
 #### 12. Volcano plot
 ```{r}
@@ -462,8 +457,13 @@ labs(title = "Volcano plot: LNCaP hypoxia")
 
 ggsave("Volcano_plot_LNCAP.png", p_volcano, width = 6, height = 5, dpi = 300)
 ```
-# plot
+<p align="center">
+  <img src="Plots/Volcano_plot_LNCAP.png" width="500">
+</p>
 
+Blue points represent genes that are significantly upregulated under hypoxia in LNCaP cells (padj < 0.05 and log2FC > 1). Red points represent genes that are significantly downregulated under hypoxia (padj < 0.05 and log2FC < −1). Green points represent genes that are not significantly differentially expressed. Genes appearing far to the right or left and higher on the y-axis show both large expression changes and strong statistical support, indicating robust hypoxia-responsive genes in LNCaP cells.
+
+---
 ### 10. Pathway Analysis
 
 RNA-seq differential expression produces lists of genes. However, biology does not operate gene-by-gene.
@@ -497,7 +497,7 @@ library(dplyr)
 
 ##### Step 2: Convert gene IDs (ENSEMBL → ENTREZ)
 
-**Why:** Reactome pathways are indexed by ENTREZ IDs
+Reactome pathways are indexed by ENTREZ IDs. So, conversion is necessary.
 
 ```r
 res_lncap$ENSEMBL <- rownames(res_lncap)
@@ -511,7 +511,7 @@ id_map <- bitr(
 ```
 
 
-##### Step 3: Merge mapping and remove duplicates
+##### Step 3: Merge mapping and removing duplicates
 
 Each gene must contribute once; duplicates distort enrichment.
 
@@ -522,7 +522,7 @@ res_mapped <- res_lncap %>%
   distinct(ENTREZID, .keep_all = TRUE)
 ```
 
----
+
 
 ##### Step 4: Create ranked gene list 
 
@@ -535,8 +535,7 @@ names(gene_ranking) <- res_mapped$ENTREZID
 gene_ranking <- sort(gene_ranking, decreasing = TRUE)
 ```
 
-*  Top genes are genes induced by condition
-* Bottom genes are genes repressed by condition
+Top genes are genes induced by condition. Bottom genes are genes repressed by condition
 
 ---
 
@@ -553,22 +552,19 @@ gsea_reactome <- gsePathway(
 
 ---
 
-## Step 6: Inspect enriched pathways
+##### Step 6: Inspect enriched pathways
 
 ```r
 head(gsea_reactome@result)
 ```
 
-**Key interpretation rules:**
-
-* NES > 0 → pathway activated
-* NES < 0 → pathway suppressed
+Key interpretation rules: NES > 0 → pathway activated, NES < 0 → pathway suppressed
 
 ---
 
 #### PART 2: Over-Representation Analysis (ORA)
 
-* This particular analysis talks about, Are significant DEGs over-represented in known pathways?
+This particular analysis talks about, Are significant DEGs over-represented in known pathways?
 
 
 ##### Step 1: Define significant genes
@@ -598,10 +594,19 @@ ora_reactome <- enrichPathway(
 ```r
 dotplot(ora_reactome, showCategory = 20)
 ```
+<p align="center">
+  <img src="Plots/ora_reactome_dotplot.png" width="500">
+</p>
 
-ORA ignores genes just below the cutoff, depends heavily on arbitrary thresholds, misses subtle
-coordinated shifts. Therefore, ORA should be treated as a supporting or confirmatory analysis, not the primary one.
-# plot
+The ORA dot plot highlights Reactome pathways significantly enriched among hypoxia-responsive genes in LNCaP cells, with amino acid transport–related pathways showing the strongest enrichment.
+Dot size represents the number of differentially expressed genes contributing to each pathway, while color indicates statistical significance (adjusted p-value).
+These results suggest that hypoxia induces metabolic adaptation in LNCaP cells, particularly through altered amino acid transport and nutrient uptake.
+
+
+
+ORA ignores genes just below the cutoff, depends heavily on arbitrary thresholds, misses subtle coordinated shifts. 
+Therefore, ORA should be treated as a supporting or confirmatory analysis, not the primary one.
+
 ---
 #### PART 3: fgsea + Hallmark 
 
@@ -664,10 +669,7 @@ fgsea_res <- fgsea(
 ##### Step 4: Inspect top Hallmark pathways
 
 ```r
-fgsea_res %>%
-  arrange(padj) %>%
-  select(pathway, NES, padj) %>%
-  head()
+fgsea_res[order(padj), .(pathway, NES, padj)][1:6]
 ```
 
 
@@ -675,31 +677,58 @@ fgsea_res %>%
 ##### Step 5: Visualized Hallmark enrichment
 
 ```r
-library(ggplot2)
-library(stringr)
+waterfall_plot <- function(fgsea_res, graph_title) {
 
-fgsea_res %>%
-  arrange(padj) %>%
-  slice(1:15) %>%
-  mutate(pathway = str_remove(pathway, "HALLMARK_")) %>%
-  ggplot(aes(x = NES, y = reorder(pathway, NES), fill = padj < 0.05)) +
-  geom_col() +
-  coord_flip() +
-  theme_minimal() +
-  labs(
-    title = "Hallmark pathways altered",
-    x = "Normalized Enrichment Score",
-    y = NULL
-  )
+  fgsea_df <- as.data.frame(fgsea_res)
+
+  p <- fgsea_df %>%
+    mutate(short_name = str_split_fixed(pathway, "_", 2)[,2]) %>%
+    ggplot(aes(x = reorder(short_name, NES), y = NES)) +
+      geom_bar(stat = "identity", aes(fill = padj < 0.05)) +
+      coord_flip() +
+      labs(
+        x = "Hallmark Pathway",
+        y = "Normalized Enrichment Score",
+        title = graph_title
+      ) +
+      theme(
+        axis.text.y = element_text(size = 7),
+        plot.title = element_text(hjust = 0.5)
+      )
+
+  return(p)
+}
+
+
+p <- waterfall_plot(
+  fgsea_res,
+  "Hallmark pathways altered by hypoxia in LNCaP cells"
+)
+
+ggsave(
+  filename = "Hallmark_fgsea_waterfall_LNCaP.png",
+  plot = p,
+  width = 8,
+  height = 6,
+  dpi = 300
+)
+
 ```
 
-# plot
+<p align="center">
+    <img src="Plots/Hallmark_fgsea_waterfall_LNCaP.png">
+</p>
+
+  The Hallmark fgsea waterfall plot shows strong positive enrichment of hypoxia-related pathways in LNCaP cells, including HYPOXIA, GLYCOLYSIS, ANGIOGENESIS, and EPITHELIAL–MESENCHYMAL TRANSITION, indicating activation of stress adaptation and metabolic reprogramming under low oxygen. In contrast, pathways such as INTERFERON_ALPHA_RESPONSE, INTERFERON_GAMMA_RESPONSE, and OXIDATIVE_PHOSPHORYLATION are negatively enriched, suggesting suppression of immune signaling and mitochondrial respiration.
+
+Overall, this pattern reflects a coordinated transcriptional shift toward hypoxia-driven survival and plasticity programs rather than isolated gene-level changes.
+
 ---
 
 
-Using a combination of pre-ranked GSEA, ORA, and fgsea with Hallmark gene sets, we analysed the transcriptional consequences of hypoxia in LNCaP prostate cancer cells. Pathway-level analysis comparing LNCaP cells grown under normoxia and hypoxia reveals a clear  transcriptional response to low-oxygen stress. Using fgsea with Hallmark gene sets, we observed strong positive enrichment of pathways related to hypoxia response, glycolysis, and cellular stress adaptation, indicating coordinated upregulation of genes involved in oxygen sensing and metabolic reprogramming. In contrast, pathways associated with differentiated cellular functions show relative suppression under hypoxic conditions.
+**Using a combination of pre-ranked GSEA, ORA, and fgsea with Hallmark gene sets, we analysed the transcriptional consequences of hypoxia in LNCaP prostate cancer cells. Pathway-level analysis comparing LNCaP cells grown under normoxia and hypoxia reveals a clear  transcriptional response to low-oxygen stress. Using fgsea with Hallmark gene sets, we observed strong positive enrichment of pathways related to hypoxia response, glycolysis, and cellular stress adaptation, indicating coordinated upregulation of genes involved in oxygen sensing and metabolic reprogramming. In contrast, pathways associated with differentiated cellular functions show relative suppression under hypoxic conditions.**
 
-Overall, fgsea with Hallmark gene sets provides a robust and interpretable summary of hypoxia-induced biological programs in LNCaP cells.
+**Overall, fgsea with Hallmark gene sets provides a robust and interpretable summary of hypoxia-induced biological programs in LNCaP cells.**
 
 
 
