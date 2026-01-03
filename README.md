@@ -1,4 +1,4 @@
-# RNA-Seq_Analysis
+# Bulk RNA-Seq
 
 ## INTRODUCTION
 RNA sequencing is a widely used method to study gene expression by measuring RNA levels in cells. It allows us to compare how genes are turned on or off under different biological conditions. RNA-seq is commonly used in cancer research to understand how cells respond to stress, treatment, or changes in their environment.
@@ -326,7 +326,10 @@ print(p_pca)
 dev.off()
 ```
 PCA answers "what dominates variation?"
-# pca plot
+<p align="center">
+  <img src="Plots/PCA_plot" width="350">
+</p>
+
 
 #### 7. Sample-to-sample distance heatmap
 ```{r}
