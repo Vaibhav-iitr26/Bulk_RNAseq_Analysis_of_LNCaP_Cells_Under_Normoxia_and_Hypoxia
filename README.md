@@ -1,4 +1,4 @@
-# RNA-Seq_Analysis
+# Bulk RNA-Seq
 
 ## INTRODUCTION
 RNA sequencing is a widely used method to study gene expression by measuring RNA levels in cells. It allows us to compare how genes are turned on or off under different biological conditions. RNA-seq is commonly used in cancer research to understand how cells respond to stress, treatment, or changes in their environment.
@@ -198,7 +198,7 @@ After running featureCounts, you obtain one count file per sample. Each file con
 
 ### 9. Differential Gene Expression
 
-The next step in the RNA-seq workflow is the differential expression analysis. The goal of differential expression testing is to determine which genes are expressed at different levels between conditions. These genes can offer biological insight into the processes affected by the condition(s) of interest. DESeq2 is a widely used Bioconductor package in R designed for differential gene expression analysis of high-throughput sequencing data, such as RNA-seq. So, required packages installed.
+The next step in the RNA-seq workflow is the differential expression analysis. The goal of differential expression testing is to determine which genes are expressed at different levels between conditions. These genes can offer biological insight into the processes affected by the conditions of interest. DESeq2 is a widely used Bioconductor package in R designed for differential gene expression analysis of high-throughput sequencing data, such as RNA-seq. So, required packages installed.
 
 ```r
 if (!requireNamespace("BiocManager", quietly = TRUE))
@@ -212,84 +212,258 @@ install.packages(c("tidyverse", "ggrepel"))
 
 ```r
 library(DESeq2)
-library(dplyr)
-library(tibble)
 library(tidyverse)
-library(data.table)
+library(dplyr)
 library(ggplot2)
-library(ggrepel)
 library(pheatmap)
 library(RColorBrewer)
 library(matrixStats)
 library(clusterProfiler)
-library(org.Hs.eg.db)
 library(ReactomePA)
+library(org.Hs.eg.db)
 library(fgsea)
-library(forcats)
-library(stringr)
 ```
 DESeq2 - Core package used for normalization and differential gene expression analysis of RNA-seq count data.
 
-dplyr, tibble, tidyverse, data.table, forcats, stringr - Used for efficient data manipulation, filtering, formatting, and handling sample and gene information.
+dplyr, tidyverse,  - Used for efficient data manipulation, filtering, formatting, and handling sample and gene information.
 
-ggplot2, ggrepel, pheatmap, RColorBrewer, matrixStats - Used for visualization of results, including PCA plots, volcano plots, and heatmaps.
+ggplot2, pheatmap, RColorBrewer - Used for visualization of results, including PCA plots, volcano plots, and heatmaps.
 
 clusterProfiler, org.Hs.eg.db, ReactomePA, fgsea - Used for functional annotation and pathway enrichment analysis of differentially expressed genes.
 
- #### 2. Loading Count Matrix and Creating Sample Metadata
+ #### 2. Loading Count Matrix 
 ```r
-#Loads the combined gene × sample raw count matrix. Gene IDs are used as row names.
-raw_counts <- read.csv(
-  "8_Read_counts/GSE106305_counts_matrix.csv",
-  row.names = "Geneid",
-  stringsAsFactors = FALSE
-)
+#Read count matrix
+
+counts <- read.csv("GSE106305_counts_matrix.csv",
+row.names = "Geneid",
+stringsAsFactors = FALSE)
 
 
-#Ensure consistent sample order
-raw_counts <- raw_counts[, sort(colnames(raw_counts))]
+counts <- counts[, sort(colnames(counts))]
+#View the first few rows
+head(counts)
+
+#Rows = genes, Columns = RNA-seq samples, Values = raw read counts (NOT normalized)
+```
 
 
-#Checks data dimensions and total read counts per sample.
-dim(raw_counts)
-colSums(raw_counts)
+#### 3. Creating Sample Metadata
 
-
-#Defines experimental conditions for each sample.
-condition <- c(
+```{r}
+condition <- factor(c(
 rep("LNCAP_Hypoxia", 2),
 rep("LNCAP_Normoxia", 2),
 rep("PC3_Hypoxia", 2),
 rep("PC3_Normoxia", 2)
-)
+))
 
 
-#Creates sample metadata aligned with the count matrix.
 colData <- data.frame(condition)
-rownames(colData) <- colnames(raw_counts)
-colData
+rownames(colData) <- colnames(counts)
+head(colData)
 
+#Metadata encodes the experimental design. DESeq2 estimates expression changes relative to these biological conditions.
 ```
 
-#### 3. Creating DESeq2 Dataset and Inspect Zero-Count Genes
+
+#### 4. Creating DESeq2 Dataset and Inspect Zero-Count Genes
 
 ```r
-#Creates a DESeq2 dataset by combining the raw count matrix with sample metadata and specifying the experimental design based on the condition variable.
 dds <- DESeqDataSetFromMatrix(
-countData = raw_counts,
-colData   = colData,
-design    = ~ condition
+countData = counts,
+colData = colData,
+design = ~ condition
 )
+#This object links gene counts with experimental design, enabling statistical inference of differential expression.
 
-#Extracts the raw gene-level read counts from the DESeq2 dataset object. 
-count_matrix <- counts(dds)
 
-#Calculates the number of samples in which each gene has zero read counts.
-zero_counts_per_gene <- rowSums(count_matrix == 0)
-table(zero_counts_per_gene)
+keep <- rowSums(counts(dds) >= 10) >= 2
+#Keep genes with at least 10 reads in at least 2 samples
+
+dds <- dds[keep, ]
+```
+Genes expressed in almost no samples carry little biological signal. Removing them improves dispersion estimation. Avoids false positives driven by noise.
+
+
+#### 5. Differential expression analysis
+
+```{r}
+dds <- DESeq(dds)
+#Here DESeq2 Estimates size factors (library depth), Estimates gene-wise dispersion, Fits negative binomial GLMs, Performs hypothesis testing
+
+
+#Normalized counts (used for visualization only)
+norm_counts <- counts(dds, normalized = TRUE)
+write.csv(norm_counts, "Normalized_counts.csv")
+
+#Never use normalized counts for DE testing. DESeq2 already handled normalization internally.
 ```
 
 
+
+#### 6. Exploratory analysis: PCA
+PCA answers "what dominates variation?"
+```{r}
+
+#Variance-stabilizing transformation
+vsd <- vst(dds, blind = TRUE)
+#Raw counts are highly skewed. VST makes variance roughly constant across expression levels with preserving biological differences.
+pca_data <- plotPCA(vsd, intgroup = "condition", returnData = TRUE)
+percentVar <- round(100 * attr(pca_data, "percentVar"))
+
+
+p_pca <- ggplot(pca_data, aes(PC1, PC2, color = condition)) +
+geom_point(size = 3) +
+labs(x = paste0("PC1: ", percentVar[1], "%"),
+y = paste0("PC2: ", percentVar[2], "%"),
+title = "PCA (VST transformed)") +
+theme_minimal()
+
+
+ggsave("PCA_plot.png", p_pca, width = 6, height = 5, dpi = 300)
+
+print(p_pca)
+dev.off()
+```
+<p align="center">
+  <img src="Plots/PCA_plot.png" width="500">
+</p>
+
+PCA of VST-transformed counts shows clear separation of samples by cell line along PC1 (98% variance), indicating that intrinsic transcriptional differences between LNCaP and PC3 dominate the dataset.
+Within each cell line, normoxia and hypoxia samples separate along PC2, suggesting a consistent but comparatively smaller transcriptional response to hypoxic conditions.
+Replicates cluster tightly, indicating good data quality and reproducibility.
+
+
+#### 7. Sample-to-sample distance heatmap
+```{r}
+sample_dists <- dist(t(assay(vsd)))
+dist_matrix <- as.matrix(sample_dists)
+
+
+png("sample_distance_heatmap.png", width = 1200, height = 1000, res = 300)
+p <- pheatmap(dist_matrix,
+clustering_distance_rows = sample_dists,
+clustering_distance_cols = sample_dists,
+col = colorRampPalette(rev(brewer.pal(9, "Blues")))(255),
+main = "Sample-to-sample distances")
+
+print(p)
+dev.off()
+```
+<p align="center">
+  <img src="Plots/sample_distance_heatmap.png" width="500">
+</p>
+
+The sample-to-sample distance heatmap shows clear clustering by cell line, with LNCaP and PC3 samples forming distinct groups, indicating strong cell line–specific transcriptional differences.
+Within each cell line, hypoxia and normoxia samples cluster closely with their respective replicates, demonstrating good reproducibility and a consistent hypoxia-induced transcriptional response.
+
+#### 8. Expression distribution diagnostics
+```{r}
+png("density_raw_vs_vst.png", width = 2000, height = 2000, res = 300)
+par(mfrow = c(2, 2))
+
+
+plot(density(counts(dds)[,1]), main = "Raw counts", xlab = "Expression")
+plot(density(assay(vsd)[,1]), main = "VST counts", xlab = "Expression")
+
+
+dev.off()
+
+```
+<p align="center">
+  <img src="Plots/density_raw_vs_vst.png" width="500">
+</p>
+
+Density plots show that raw RNA-seq counts are highly skewed, with most genes having low counts and a long tail of highly expressed genes.
+After variance stabilizing transformation (VST), the expression distributions become more symmetric and comparable across samples, reducing the dominance of highly expressed genes.
+This confirms that VST is appropriate for downstream exploratory analyses such as PCA and clustering.
+
+#### 9. Highly variable gene heatmap
+```{r}
+rv <- rowVars(assay(vsd))
+top_genes <- order(rv, decreasing = TRUE)[1:40]
+
+
+mat <- assay(vsd)[top_genes, ]
+mat <- mat - rowMeans(mat)
+
+
+png("top_variable_genes_heatmap.png", width = 1200, height = 1200, res = 300)
+pheatmap(mat,
+color = colorRampPalette(rev(brewer.pal(9, "RdBu")))(255),
+fontsize_row = 6,
+main = "Top 40 most variable genes")
+dev.off()
+```
+<p align="center">
+  <img src="Plots/top_variable_genes_heatmap.png" width="500">
+</p>
+The heatmap of the top 40 most variable genes shows clear separation of samples by cell line, with LNCaP and PC3 forming distinct clusters, indicating strong cell line–specific transcriptional programs.
+Within each cell line, hypoxia and normoxia samples display consistent expression patterns across replicates, suggesting that the largest sources of variation are driven by cell identity, with hypoxia contributing a secondary but structured effect.
+
+
+#### 10. Extracted differential expression results
+```{r}
+dds_lncap <- dds[, grepl("LNCAP", colnames(dds))]
+dds_lncap$condition <- droplevels(dds_lncap$condition)
+dds_lncap$condition <- relevel(dds_lncap$condition, ref = "LNCAP_Normoxia")
+
+
+dds_lncap <- DESeq(dds_lncap)
+
+
+res_lncap <- results(dds_lncap,
+contrast = c("condition",
+"LNCAP_Hypoxia",
+"LNCAP_Normoxia"))
+write.csv(as.data.frame(res_lncap), "DEGs_LNCAP.csv")
+
+```
+
+#### 11. MA plot
+
+```{r}
+
+png("MA_plot_LNCAP.png", width = 800, height = 600, res = 150)
+plotMA(res_lncap, ylim = c(-5, 5))
+dev.off()
+```
+<p align="center">
+  <img src="Plots/MA_plot_LNCAP.png" width="500">
+</p>
+
+The MA plot shows the relationship between mean normalized expression and log2 fold change for LNCaP hypoxia versus normoxia, with most genes centered around zero, indicating no global expression bias.
+Differentially expressed genes are primarily observed at moderate to high expression levels, while low-count genes show greater variability, reflecting expected RNA-seq noise.
+This pattern indicates appropriate normalization and reliable detection of hypoxia-responsive genes.
+
+#### 12. Volcano plot
+```{r}
+
+res_df <- as.data.frame(res_lncap) %>%
+na.omit() %>%
+mutate(regulation = case_when(
+padj < 0.05 & log2FoldChange > 1 ~ "Upregulated",
+padj < 0.05 & log2FoldChange < -1 ~ "Downregulated",
+TRUE ~ "Not significant"
+))
+
+
+p_volcano <- ggplot(res_df, aes(log2FoldChange, -log10(padj), color = regulation)) +
+geom_point(alpha = 0.6) +
+theme_minimal() +
+labs(title = "Volcano plot: LNCaP hypoxia")
+
+
+ggsave("Volcano_plot_LNCAP.png", p_volcano, width = 6, height = 5, dpi = 300)
+```
+<p align="center">
+  <img src="Plots/Volcano_plot_LNCAP.png" width="500">
+</p>
+
+Blue points represent genes that are significantly upregulated under hypoxia in LNCaP cells (padj < 0.05 and log2FC > 1). Red points represent genes that are significantly downregulated under hypoxia (padj < 0.05 and log2FC < −1). Green points represent genes that are not significantly differentially expressed. Genes appearing far to the right or left and higher on the y-axis show both large expression changes and strong statistical support, indicating robust hypoxia-responsive genes in LNCaP cells.
+
+---
 ### 10. Pathway Analysis
 
 RNA-seq differential expression produces lists of genes. However, biology does not operate gene-by-gene.
@@ -323,7 +497,7 @@ library(dplyr)
 
 ##### Step 2: Convert gene IDs (ENSEMBL → ENTREZ)
 
-**Why:** Reactome pathways are indexed by ENTREZ IDs
+Reactome pathways are indexed by ENTREZ IDs. So, conversion is necessary.
 
 ```r
 res_lncap$ENSEMBL <- rownames(res_lncap)
@@ -337,7 +511,7 @@ id_map <- bitr(
 ```
 
 
-##### Step 3: Merge mapping and remove duplicates
+##### Step 3: Merge mapping and removing duplicates
 
 Each gene must contribute once; duplicates distort enrichment.
 
@@ -348,7 +522,7 @@ res_mapped <- res_lncap %>%
   distinct(ENTREZID, .keep_all = TRUE)
 ```
 
----
+
 
 ##### Step 4: Create ranked gene list 
 
@@ -361,8 +535,7 @@ names(gene_ranking) <- res_mapped$ENTREZID
 gene_ranking <- sort(gene_ranking, decreasing = TRUE)
 ```
 
-*  Top genes are genes induced by condition
-* Bottom genes are genes repressed by condition
+Top genes are genes induced by condition. Bottom genes are genes repressed by condition
 
 ---
 
@@ -379,22 +552,19 @@ gsea_reactome <- gsePathway(
 
 ---
 
-## Step 6: Inspect enriched pathways
+##### Step 6: Inspect enriched pathways
 
 ```r
 head(gsea_reactome@result)
 ```
 
-**Key interpretation rules:**
-
-* NES > 0 → pathway activated
-* NES < 0 → pathway suppressed
+Key interpretation rules: NES > 0 → pathway activated, NES < 0 → pathway suppressed
 
 ---
 
 #### PART 2: Over-Representation Analysis (ORA)
 
-* This particular analysis talks about, Are significant DEGs over-represented in known pathways?
+This particular analysis talks about, Are significant DEGs over-represented in known pathways?
 
 
 ##### Step 1: Define significant genes
@@ -424,9 +594,18 @@ ora_reactome <- enrichPathway(
 ```r
 dotplot(ora_reactome, showCategory = 20)
 ```
+<p align="center">
+  <img src="Plots/ora_reactome_dotplot.png" width="500">
+</p>
 
-ORA ignores genes just below the cutoff, depends heavily on arbitrary thresholds, misses subtle
-coordinated shifts. Therefore, ORA should be treated as a supporting or confirmatory analysis, not the primary one.
+The ORA dot plot highlights Reactome pathways significantly enriched among hypoxia-responsive genes in LNCaP cells, with amino acid transport–related pathways showing the strongest enrichment.
+Dot size represents the number of differentially expressed genes contributing to each pathway, while color indicates statistical significance (adjusted p-value).
+These results suggest that hypoxia induces metabolic adaptation in LNCaP cells, particularly through altered amino acid transport and nutrient uptake.
+
+
+
+ORA ignores genes just below the cutoff, depends heavily on arbitrary thresholds, misses subtle coordinated shifts. 
+Therefore, ORA should be treated as a supporting or confirmatory analysis, not the primary one.
 
 ---
 #### PART 3: fgsea + Hallmark 
@@ -490,10 +669,7 @@ fgsea_res <- fgsea(
 ##### Step 4: Inspect top Hallmark pathways
 
 ```r
-fgsea_res %>%
-  arrange(padj) %>%
-  select(pathway, NES, padj) %>%
-  head()
+fgsea_res[order(padj), .(pathway, NES, padj)][1:6]
 ```
 
 
@@ -501,33 +677,58 @@ fgsea_res %>%
 ##### Step 5: Visualized Hallmark enrichment
 
 ```r
-library(ggplot2)
-library(stringr)
+waterfall_plot <- function(fgsea_res, graph_title) {
 
-fgsea_res %>%
-  arrange(padj) %>%
-  slice(1:15) %>%
-  mutate(pathway = str_remove(pathway, "HALLMARK_")) %>%
-  ggplot(aes(x = NES, y = reorder(pathway, NES), fill = padj < 0.05)) +
-  geom_col() +
-  coord_flip() +
-  theme_minimal() +
-  labs(
-    title = "Hallmark pathways altered",
-    x = "Normalized Enrichment Score",
-    y = NULL
-  )
+  fgsea_df <- as.data.frame(fgsea_res)
+
+  p <- fgsea_df %>%
+    mutate(short_name = str_split_fixed(pathway, "_", 2)[,2]) %>%
+    ggplot(aes(x = reorder(short_name, NES), y = NES)) +
+      geom_bar(stat = "identity", aes(fill = padj < 0.05)) +
+      coord_flip() +
+      labs(
+        x = "Hallmark Pathway",
+        y = "Normalized Enrichment Score",
+        title = graph_title
+      ) +
+      theme(
+        axis.text.y = element_text(size = 7),
+        plot.title = element_text(hjust = 0.5)
+      )
+
+  return(p)
+}
+
+
+p <- waterfall_plot(
+  fgsea_res,
+  "Hallmark pathways altered by hypoxia in LNCaP cells"
+)
+
+ggsave(
+  filename = "Hallmark_fgsea_waterfall_LNCaP.png",
+  plot = p,
+  width = 8,
+  height = 6,
+  dpi = 300
+)
+
 ```
+
+<p align="center">
+    <img src="Plots/Hallmark_fgsea_waterfall_LNCaP.png">
+</p>
+
+  The Hallmark fgsea waterfall plot shows strong positive enrichment of hypoxia-related pathways in LNCaP cells, including HYPOXIA, GLYCOLYSIS, ANGIOGENESIS, and EPITHELIAL–MESENCHYMAL TRANSITION, indicating activation of stress adaptation and metabolic reprogramming under low oxygen. In contrast, pathways such as INTERFERON_ALPHA_RESPONSE, INTERFERON_GAMMA_RESPONSE, and OXIDATIVE_PHOSPHORYLATION are negatively enriched, suggesting suppression of immune signaling and mitochondrial respiration.
+
+Overall, this pattern reflects a coordinated transcriptional shift toward hypoxia-driven survival and plasticity programs rather than isolated gene-level changes.
+
 ---
 
 
-Using a combination of pre-ranked GSEA, ORA, and fgsea with Hallmark gene sets, we analysed the transcriptional consequences of hypoxia in LNCaP prostate cancer cells.
+**Using a combination of pre-ranked GSEA, ORA, and fgsea with Hallmark gene sets, we analysed the transcriptional consequences of hypoxia in LNCaP prostate cancer cells. Pathway-level analysis comparing LNCaP cells grown under normoxia and hypoxia reveals a clear  transcriptional response to low-oxygen stress. Using fgsea with Hallmark gene sets, we observed strong positive enrichment of pathways related to hypoxia response, glycolysis, and cellular stress adaptation, indicating coordinated upregulation of genes involved in oxygen sensing and metabolic reprogramming. In contrast, pathways associated with differentiated cellular functions show relative suppression under hypoxic conditions.**
 
-Pathway-level analysis comparing LNCaP cells grown under normoxia and hypoxia reveals a clear  transcriptional response to low-oxygen stress. Using fgsea with Hallmark gene sets, we observed strong positive enrichment of pathways related to hypoxia response, glycolysis, and cellular stress adaptation, indicating coordinated upregulation of genes involved in oxygen sensing and metabolic reprogramming. In contrast, pathways associated with differentiated cellular functions show relative suppression under hypoxic conditions.
-
-These results indicate that hypoxia induces a global transcriptional reprogramming in LNCaP cells, driven by coordinated changes across many genes rather than by a small number of highly differentially expressed genes. The observed pathway enrichment patterns are consistent with known hypoxia-driven responses in prostate cancer cells and support the role of hypoxic stress in promoting metabolic adaptation and transcriptional plasticity.
-
-Overall, fgsea with Hallmark gene sets provides a robust and interpretable summary of hypoxia-induced biological programs in LNCaP cells.
+**Overall, fgsea with Hallmark gene sets provides a robust and interpretable summary of hypoxia-induced biological programs in LNCaP cells.**
 
 
 
